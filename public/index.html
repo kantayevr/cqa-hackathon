@@ -3,117 +3,529 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Оценка диалогов</title>
+  <meta name="theme-color" content="#090a09">
+  <title>CQA Studio — Оценка диалогов</title>
   <style>
-    body {
-      max-width: 56rem;
-      margin: 2rem auto;
-      padding: 0 1rem;
-      font: 16px/1.5 system-ui, sans-serif;
+    :root {
+      color-scheme: dark;
+      --bg: #090a09;
+      --surface: #111311;
+      --card: #171a16;
+      --line: #2b3028;
+      --text: #f4f6ef;
+      --muted: #a5ad9f;
+      --lime: #d7fb43;
+      --lime-dark: #171e07;
+      --mono: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+      --radius: 18px;
     }
 
-    select { max-width: 100%; font: inherit; }
-    li { margin-block: 0.5rem; }
-    #criteria article, #review-history article { padding: 0.75rem 0; border-bottom: 1px solid #ddd; }
-    #criteria article h3 { margin: 0; }
-    #criteria article p { margin: 0.4rem 0; }
-    #transcript li { scroll-margin-top: 1rem; }
-    #transcript li:target { background: #fff2a6; outline: 2px solid #eab308; }
+    * { box-sizing: border-box; }
+    html { scroll-padding-top: 5.25rem; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    a { color: var(--lime); text-underline-offset: 0.22em; }
+    button, select, input, textarea { font: inherit; }
+    button, a, select, input, textarea, summary { -webkit-tap-highlight-color: transparent; }
+    :focus-visible { outline: 2px solid var(--lime); outline-offset: 3px; }
+    [hidden] { display: none !important; }
+    h1, h2, h3, p { margin: 0; }
+    button { cursor: pointer; }
+    button:disabled { cursor: not-allowed; opacity: 0.52; }
+
+    .shell { width: min(calc(100% - 3rem), 88rem); margin-inline: auto; }
+    .app-header {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      border-bottom: 1px solid var(--line);
+      background: #090a09f2;
+      backdrop-filter: blur(14px);
+    }
+    .header-inner { min-height: 4.25rem; display: flex; align-items: center; gap: 1.7rem; }
+    .brand {
+      display: inline-flex;
+      flex: 0 0 auto;
+      align-items: center;
+      gap: 0.65rem;
+      color: var(--text);
+      font-size: 1rem;
+      font-weight: 850;
+      letter-spacing: -0.04em;
+      text-decoration: none;
+    }
+    .brand-mark {
+      display: grid;
+      place-items: center;
+      width: 2rem;
+      height: 2rem;
+      border-radius: 0.55rem;
+      background: var(--lime);
+      color: var(--lime-dark);
+    }
+    .brand-mark svg { width: 1.3rem; height: 1.3rem; }
+    .top-nav { display: flex; gap: 0.2rem; align-items: center; flex-wrap: wrap; }
+    .top-nav a {
+      padding: 0.4rem 0.68rem;
+      border-radius: 0.45rem;
+      color: var(--muted);
+      font-size: 0.84rem;
+      text-decoration: none;
+    }
+    .top-nav a:hover { color: var(--text); background: var(--card); }
+    .live-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.48rem;
+      margin-left: auto;
+      padding: 0.36rem 0.6rem;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      white-space: nowrap;
+      font: 0.7rem/1.35 var(--mono);
+    }
+    .live-chip::before {
+      content: "";
+      width: 0.42rem;
+      height: 0.42rem;
+      border-radius: 50%;
+      background: var(--lime);
+    }
+    main.shell { padding-block: 1.35rem 3.5rem; }
+    .eyebrow {
+      color: var(--lime);
+      font: 0.68rem/1.35 var(--mono);
+      font-weight: 650;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+    .hero {
+      position: relative;
+      display: grid;
+      grid-template-columns: 1.05fr 1fr;
+      align-items: center;
+      min-height: 19.5rem;
+      overflow: hidden;
+      isolation: isolate;
+      border: 1px solid #30372a;
+      border-radius: var(--radius);
+      background: radial-gradient(ellipse at 75% 56%, #263318 0%, #11170e 42%, #10120e 73%);
+    }
+    .hero-copy { z-index: 1; padding: clamp(1.6rem, 3.5vw, 3.3rem); }
+    .hero h1 {
+      margin-block: 0.8rem 1rem;
+      font-size: clamp(3rem, 6.15vw, 6.4rem);
+      font-weight: 870;
+      line-height: 0.89;
+      letter-spacing: -0.072em;
+      text-transform: uppercase;
+    }
+    .hero h1 span { display: block; color: var(--lime); }
+    .hero-copy > p:last-child { max-width: 31rem; color: #c2cabc; }
+    .hero-art {
+      position: absolute;
+      z-index: -1;
+      inset: 0 0 0 39%;
+      display: grid;
+      align-items: center;
+      opacity: 0.94;
+      mask-image: linear-gradient(90deg, transparent, #000 20%, #000);
+    }
+    .hero-art svg { width: 100%; height: 100%; }
+    .hero-index {
+      position: absolute;
+      right: 1.4rem;
+      bottom: 1.1rem;
+      color: #b3c099;
+      font: 0.65rem/1.35 var(--mono);
+      letter-spacing: 0.11em;
+    }
+
+    .summary-grid, .workspace-grid { display: grid; gap: 0.9rem; margin-top: 0.9rem; }
+    .summary-grid { grid-template-columns: minmax(0, 0.91fr) minmax(0, 1.09fr); }
+    .workspace-grid { grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr); align-items: start; }
+    .panel {
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+    .overview-panel { padding: 1.15rem 1.25rem; }
+    .control-label { display: block; margin-top: 0.55rem; font-weight: 750; }
+    .control-row { display: flex; align-items: stretch; gap: 0.55rem; margin-top: 0.55rem; }
+    .control-row select { flex: 1 1 12rem; min-width: 0; }
+    select, input:not([type="checkbox"]), textarea {
+      max-width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 0.56rem;
+      background: #0c0e0b;
+      color: var(--text);
+      padding: 0.55rem 0.7rem;
+    }
+    textarea { min-width: min(18rem, 100%); resize: vertical; }
+    input[type="checkbox"] { accent-color: var(--lime); }
+    button {
+      border: 1px solid #3b4433;
+      border-radius: 0.56rem;
+      background: #21261d;
+      color: var(--text);
+      padding: 0.58rem 0.8rem;
+      font-weight: 650;
+    }
+    button:hover:not(:disabled) { background: #2a3124; }
+    .primary-button {
+      border-color: var(--lime);
+      background: var(--lime);
+      color: var(--lime-dark);
+    }
+    .primary-button:hover:not(:disabled) { background: #e5ff85; }
+    .feedback { margin-top: 0.5rem; color: var(--muted); font-size: 0.82rem; }
+    .feedback:empty { display: none; }
+
+    .score-layout { display: grid; grid-template-columns: minmax(8rem, 0.55fr) minmax(0, 1fr); align-items: center; gap: 1rem; margin-top: 0.45rem; }
+    #status { font-weight: 730; overflow-wrap: anywhere; color: var(--text); font-size: 0.96rem; }
+    .score-number { color: var(--lime); font-size: clamp(2rem, 3.55vw, 3.55rem); line-height: 1; letter-spacing: -0.08em; }
+    .score-scale { margin-left: 0.4rem; color: var(--muted); font: 0.82rem var(--mono); }
+    .score-alert { display: block; margin-top: 0.48rem; color: #ffb291; font-size: 0.82rem; }
+    #section-scores { list-style: none; margin: 0; padding: 0; }
+    #section-scores li {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 0.65rem;
+      padding: 0.27rem 0;
+      color: var(--muted);
+      font-size: 0.81rem;
+    }
+    #section-scores li + li { border-top: 1px solid var(--line); }
+    .section-value { color: var(--text); font: 0.75rem var(--mono); white-space: nowrap; }
+
+    .panel-header { padding: 1.05rem 1.2rem 0.95rem; border-bottom: 1px solid var(--line); }
+    .panel-header h2, .workflow-heading h2 { margin-top: 0.25rem; font-size: clamp(1.35rem, 2.4vw, 2rem); letter-spacing: -0.045em; line-height: 1.12; }
+    .panel-header .panel-description { margin-top: 0.32rem; color: var(--muted); font-size: 0.81rem; }
+    #criteria { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 0.62rem; padding: 0.72rem; }
+    #criteria article, #review-history article {
+      min-width: 0;
+      padding: 0.85rem 0.9rem;
+      border: 1px solid var(--line);
+      border-radius: 0.8rem;
+      background: var(--card);
+    }
+    #criteria article h3, #review-history article h3 { font-size: 1rem; letter-spacing: -0.025em; line-height: 1.25; }
+    #criteria article p, #review-history article p { margin-top: 0.52rem; }
+    #criteria article p:nth-of-type(1) { color: var(--lime); font-size: 0.76rem; font-weight: 650; }
+    #criteria article p:nth-of-type(2), #review-history article p { color: var(--muted); font-size: 0.84rem; overflow-wrap: anywhere; }
+    #criteria a, #review-context a, #audio-link {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.27rem 0.54rem;
+      margin: 0.1rem 0.25rem 0.1rem 0;
+      border: 1px solid #485636;
+      border-radius: 0.4rem;
+      background: #20291a;
+      color: var(--lime);
+      text-decoration: none;
+      font: 0.7rem/1.4 var(--mono);
+    }
+    #criteria a:hover, #review-context a:hover, #audio-link:hover { border-color: var(--lime); background: #2d381d; }
+
+    .transcript-panel { position: sticky; top: 5.1rem; }
+    .transcript-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+    #transcript {
+      list-style: none;
+      margin: 0;
+      padding: 0.65rem 0.72rem;
+      max-height: min(68vh, 47rem);
+      overflow: auto;
+      scrollbar-color: #414a36 var(--surface);
+    }
+    #transcript li {
+      display: grid;
+      grid-template-columns: 2.15rem minmax(0, 1fr);
+      gap: 0.15rem 0.35rem;
+      padding: 0.65rem 0.6rem;
+      border: 1px solid transparent;
+      border-radius: 0.55rem;
+      scroll-margin: 0.45rem;
+    }
+    #transcript li + li { margin-top: 0.22rem; }
+    #transcript li:nth-child(odd) { background: #151815; }
+    #transcript li:target { border-color: var(--lime); background: #25321a; }
+    .turn-index { grid-row: span 2; color: #929d88; font: 0.72rem/1.65 var(--mono); }
+    .turn-meta { display: flex; flex-wrap: wrap; gap: 0.45rem; align-items: baseline; color: var(--muted); font: 0.7rem/1.45 var(--mono); }
+    .turn-role { font-weight: 700; color: #d5dcd0; }
+    .turn-role[data-speaker="operator"] { color: var(--lime); }
+    .turn-role[data-speaker="bot"] { color: #cbb9ff; }
+    .turn-role[data-speaker="system"] { color: #ecc694; }
+    .turn-text { color: var(--text); font-size: 0.86rem; overflow-wrap: anywhere; }
+
+    .workflow { margin-top: 1.7rem; }
+    .workflow-heading { margin: 0 0 0.75rem 0.15rem; }
+    .workflow > details + details { margin-top: 0.55rem; }
+    .workflow > details {
+      border: 1px solid var(--line);
+      border-radius: 0.75rem;
+      background: var(--surface);
+    }
+    .workflow summary { padding: 0.78rem 1rem; font-weight: 740; cursor: pointer; }
+    .workflow summary::marker { color: var(--lime); }
+    .workflow > details > :not(summary) { margin: 0.7rem 1rem 0.95rem; }
+    .workflow form > p { margin-bottom: 0.65rem; }
+    .workflow label { color: #d9dfd4; }
+    .workflow fieldset { min-width: 0; margin: 0; padding: 0.75rem; border: 1px solid var(--line); border-radius: 0.65rem; }
+    .workflow fieldset p { margin-bottom: 0.56rem; }
+    .workflow fieldset input:not([type="checkbox"]), .workflow fieldset textarea { display: block; width: 100%; margin-top: 0.2rem; }
+    .workflow fieldset textarea { min-width: 0; }
+    #checklist-rows { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.6rem; margin-bottom: 0.7rem; }
+    #review-context p + p, #review-history article + article { margin-top: 0.5rem; }
+    #review-message:empty { display: none; }
+    .footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 0.5rem;
+      padding-top: 1rem;
+      margin-top: 1.8rem;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font: 0.7rem/1.4 var(--mono);
+    }
+
+    @media (max-width: 68rem) {
+      .control-row { flex-wrap: wrap; }
+      .control-row button { flex: 1 1 auto; }
+      #criteria { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 49rem) {
+      .shell { width: calc(100% - 1.4rem); }
+      .header-inner { gap: 0.35rem 0.55rem; flex-wrap: wrap; padding: 0.6rem 0; }
+      .top-nav { order: 3; width: 100%; }
+      .top-nav a { padding: 0.3rem 0.38rem; font-size: 0.75rem; }
+      .live-chip { font-size: 0.59rem; }
+      .hero { min-height: 16.7rem; grid-template-columns: 1fr; }
+      .hero-copy { padding: 1.4rem; }
+      .hero h1 { font-size: clamp(2.85rem, 10.5vw, 4.5rem); }
+      .hero-art { inset: 0 0 0 28%; opacity: 0.45; }
+      .hero-index { display: none; }
+      .summary-grid, .workspace-grid { grid-template-columns: minmax(0, 1fr); }
+      .transcript-panel { position: static; }
+      #transcript { max-height: 29rem; }
+    }
+
+    @media (max-width: 31rem) {
+      .score-layout, #checklist-rows { grid-template-columns: minmax(0, 1fr); }
+      .control-row > * { width: 100%; }
+    }
   </style>
 </head>
 <body>
-  <main>
-    <h1>Оценка диалогов</h1>
-    <label for="conversation">Диалог</label>
-    <select id="conversation" disabled></select>
-    <p id="status" role="status">Загружаю диалоги…</p>
-    <ul id="section-scores" aria-label="Итоги по разделам"></ul>
-    <button id="evaluate-current" type="button" disabled>
-      Оценить по рабочему чек-листу
-    </button>
-    <p id="evaluate-message" role="status"></p>
+  <header class="app-header">
+    <div class="shell header-inner">
+      <a class="brand" href="#top" aria-label="CQA Studio, в начало">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round">
+            <path d="M3 12h3l2.5-5 3.4 10 3-7 2.2 2H21"/>
+          </svg>
+        </span>
+        CQA STUDIO
+      </a>
+      <nav class="top-nav" aria-label="Навигация">
+        <a href="#workspace">Диалоги</a>
+        <a href="#checklist-panel" data-open-panel>Чек-лист</a>
+        <a href="#appeal-panel" data-open-panel>Апелляция</a>
+        <a href="#review-panel" data-open-panel>Проверка</a>
+      </nav>
+      <span class="live-chip">Локальный режим</span>
+    </div>
+  </header>
 
-    <details>
-      <summary>Редактор чек-листа</summary>
-      <form id="checklist-form">
-        <div id="checklist-rows"></div>
-        <button id="add-criterion" type="button" disabled>Добавить критерий</button>
-        <button id="save-checklist" type="submit" disabled>Сохранить чек-лист</button>
-        <p id="checklist-message" role="status"></p>
-      </form>
-    </details>
+  <main class="shell" id="top">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <p class="eyebrow">CQA / контроль качества</p>
+        <h1 id="hero-title">Оценка <span>диалогов</span></h1>
+        <p>Разбор работы оператора по репликам, критерии оценки и история апелляций.</p>
+      </div>
+      <div class="hero-art" aria-hidden="true">
+        <svg viewBox="0 0 760 320" preserveAspectRatio="xMidYMid slice">
+          <defs>
+            <pattern id="signal-grid" width="32" height="32" patternUnits="userSpaceOnUse">
+              <path d="M32 0H0V32" fill="none" stroke="#778d4d" stroke-opacity=".23"/>
+            </pattern>
+            <linearGradient id="signal-fill" x1="0" y1="0" x2="0" y2="1">
+              <stop stop-color="#d7fb43" stop-opacity=".68"/>
+              <stop offset="1" stop-color="#6e9929" stop-opacity=".14"/>
+            </linearGradient>
+            <linearGradient id="signal-line">
+              <stop stop-color="#b9ff38" stop-opacity=".05"/>
+              <stop offset=".53" stop-color="#d7fb43"/>
+              <stop offset="1" stop-color="#a3ce39" stop-opacity=".18"/>
+            </linearGradient>
+            <radialGradient id="signal-glow">
+              <stop stop-color="#aef930" stop-opacity=".18"/>
+              <stop offset="1" stop-color="#aef930" stop-opacity="0"/>
+            </radialGradient>
+          </defs>
+          <rect width="760" height="320" fill="url(#signal-grid)"/>
+          <ellipse cx="520" cy="150" rx="250" ry="145" fill="url(#signal-glow)"/>
+          <g fill="none" stroke="#a5c866" stroke-opacity=".18">
+            <circle cx="510" cy="160" r="66"/><circle cx="510" cy="160" r="102"/>
+            <circle cx="510" cy="160" r="133"/><circle cx="510" cy="160" r="156"/>
+            <path d="M75 160H748M510 12V305" stroke-dasharray="4 8"/>
+          </g>
+          <g fill="url(#signal-fill)">
+            <rect x="260" y="151" width="6" height="18" rx="3"/><rect x="278" y="144" width="6" height="32" rx="3"/>
+            <rect x="296" y="153" width="6" height="14" rx="3"/><rect x="314" y="134" width="6" height="52" rx="3"/>
+            <rect x="332" y="117" width="6" height="86" rx="3"/><rect x="350" y="139" width="6" height="42" rx="3"/>
+            <rect x="368" y="108" width="6" height="104" rx="3"/><rect x="386" y="89" width="6" height="142" rx="3"/>
+            <rect x="404" y="118" width="6" height="84" rx="3"/><rect x="422" y="72" width="6" height="176" rx="3"/>
+            <rect x="440" y="99" width="6" height="122" rx="3"/><rect x="458" y="50" width="6" height="220" rx="3"/>
+            <rect x="476" y="92" width="6" height="136" rx="3"/><rect x="494" y="68" width="6" height="184" rx="3"/>
+            <rect x="512" y="37" width="6" height="246" rx="3"/><rect x="530" y="83" width="6" height="154" rx="3"/>
+            <rect x="548" y="109" width="6" height="102" rx="3"/><rect x="566" y="73" width="6" height="174" rx="3"/>
+            <rect x="584" y="119" width="6" height="82" rx="3"/><rect x="602" y="105" width="6" height="110" rx="3"/>
+            <rect x="620" y="129" width="6" height="62" rx="3"/><rect x="638" y="145" width="6" height="30" rx="3"/>
+            <rect x="656" y="137" width="6" height="46" rx="3"/><rect x="674" y="152" width="6" height="16" rx="3"/>
+          </g>
+          <path d="M61 160H292L310 151L326 167L344 144L359 177L382 126L401 184L426 114L450 193L474 126L493 178L516 83L539 190L565 123L587 171L610 141L630 166L655 155L679 160H750"
+            fill="none" stroke="url(#signal-line)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="516" cy="83" r="5" fill="#d7fb43"/>
+          <circle cx="516" cy="83" r="11" fill="none" stroke="#d7fb43" stroke-opacity=".45"/>
+        </svg>
+      </div>
+      <span class="hero-index" aria-hidden="true">SIGNAL / 01</span>
+    </section>
 
-    <template id="criterion-template">
-      <fieldset>
-        <p><label>Название <input name="label" required></label></p>
-        <p><label>Правило оценки <textarea name="rule" rows="3" required></textarea></label></p>
-        <p><label>Вес <input name="weight" type="number" min="0" step="any" required></label></p>
-        <p>
-          <label>Тип оценки
-            <select name="type">
-              <option value="boolean">Да / Нет</option>
-              <option value="scale">Числовая шкала</option>
-            </select>
-          </label>
-        </p>
-        <p><label>Значения шкалы <input name="scale" placeholder="0, 5, 10"></label></p>
-        <p><label><input name="allowNA" type="checkbox"> Разрешить N/A</label></p>
-        <button type="button">Удалить критерий</button>
-      </fieldset>
-    </template>
+    <div class="summary-grid" id="workspace">
+      <section class="panel overview-panel" aria-label="Выбор диалога">
+        <p class="eyebrow">01 / рабочая область</p>
+        <label class="control-label" for="conversation">Диалог</label>
+        <div class="control-row">
+          <select id="conversation" disabled></select>
+          <button class="primary-button" id="evaluate-current" type="button" disabled>Оценить по чек-листу</button>
+        </div>
+        <p id="evaluate-message" class="feedback" role="status"></p>
+      </section>
 
-    <details>
-      <summary>Апелляция</summary>
-      <form id="appeal-form">
-        <p>
-          <label>Критерий
-            <select id="appeal-criterion" required disabled></select>
-          </label>
-        </p>
-        <p>
-          <label>Почему ты оспариваешь оценку?
-            <textarea id="appeal-comment" rows="3" maxlength="1000" required disabled></textarea>
-          </label>
-        </p>
-        <button id="appeal-submit" type="submit" disabled>Подать апелляцию</button>
-        <p id="appeal-message" role="status"></p>
-      </form>
-    </details>
+      <section class="panel overview-panel" aria-label="Итог оценки">
+        <p class="eyebrow">02 / итог оценки</p>
+        <div class="score-layout">
+          <p id="status" role="status">Загружаю диалоги…</p>
+          <ul id="section-scores" aria-label="Итоги по разделам"></ul>
+        </div>
+      </section>
+    </div>
 
-    <details id="review-panel">
-      <summary>Решение проверяющего</summary>
-      <div id="review-context"></div>
-      <form id="review-form" hidden>
-        <p>
-          <label>Решение
-            <select id="review-action">
-              <option value="confirm">Подтвердить оценку</option>
-              <option value="change">Изменить оценку</option>
-            </select>
-          </label>
-        </p>
-        <p id="review-value-row" hidden>
-          <label>Новая оценка <select id="review-value"></select></label>
-        </p>
-        <p>
-          <label>Причина решения
-            <textarea id="review-reason" rows="3" maxlength="1000" required></textarea>
-          </label>
-        </p>
-        <button id="review-submit" type="submit" disabled>Сохранить решение</button>
-      </form>
-      <p id="review-message" role="status"></p>
-      <div id="review-history"></div>
-    </details>
+    <div class="workspace-grid">
+      <section class="panel" aria-labelledby="criteria-title">
+        <header class="panel-header">
+          <p class="eyebrow">Оценка</p>
+          <h2 id="criteria-title">По критериям</h2>
+          <p class="panel-description">Ответы, обоснования и ссылки на реплики.</p>
+        </header>
+        <div id="criteria"></div>
+      </section>
 
-    <h2>Оценка по критериям</h2>
-    <div id="criteria"></div>
+      <aside class="panel transcript-panel" aria-labelledby="transcript-title">
+        <header class="panel-header transcript-header">
+          <div>
+            <p class="eyebrow">Диалог</p>
+            <h2 id="transcript-title">Транскрипт</h2>
+          </div>
+          <a id="audio-link" target="_blank" rel="noopener noreferrer" hidden>Открыть запись звонка</a>
+        </header>
+        <ol id="transcript"></ol>
+      </aside>
+    </div>
 
-    <h2>Транскрипт</h2>
-    <a id="audio-link" target="_blank" rel="noopener noreferrer" hidden>
-      Открыть запись звонка
-    </a>
-    <ol id="transcript"></ol>
+    <section class="workflow" aria-labelledby="workflow-title">
+      <header class="workflow-heading">
+        <p class="eyebrow">03 / настройки и пересмотр</p>
+        <h2 id="workflow-title">Управление оценкой</h2>
+      </header>
+      <details id="checklist-panel">
+        <summary>Редактор чек-листа</summary>
+        <form id="checklist-form">
+          <div id="checklist-rows"></div>
+          <button id="add-criterion" type="button" disabled>Добавить критерий</button>
+          <button id="save-checklist" type="submit" disabled>Сохранить чек-лист</button>
+          <p id="checklist-message" role="status"></p>
+        </form>
+      </details>
+
+      <template id="criterion-template">
+        <fieldset>
+          <p><label>Название <input name="label" required></label></p>
+          <p><label>Правило оценки <textarea name="rule" rows="3" required></textarea></label></p>
+          <p><label>Вес <input name="weight" type="number" min="0" step="any" required></label></p>
+          <p>
+            <label>Тип оценки
+              <select name="type">
+                <option value="boolean">Да / Нет</option>
+                <option value="scale">Числовая шкала</option>
+              </select>
+            </label>
+          </p>
+          <p><label>Значения шкалы <input name="scale" placeholder="0, 5, 10"></label></p>
+          <p><label><input name="allowNA" type="checkbox"> Разрешить N/A</label></p>
+          <button type="button">Удалить критерий</button>
+        </fieldset>
+      </template>
+
+      <details id="appeal-panel">
+        <summary>Апелляция</summary>
+        <form id="appeal-form">
+          <p>
+            <label>Критерий
+              <select id="appeal-criterion" required disabled></select>
+            </label>
+          </p>
+          <p>
+            <label>Почему ты оспариваешь оценку?
+              <textarea id="appeal-comment" rows="3" maxlength="1000" required disabled></textarea>
+            </label>
+          </p>
+          <button id="appeal-submit" type="submit" disabled>Подать апелляцию</button>
+          <p id="appeal-message" role="status"></p>
+        </form>
+      </details>
+
+      <details id="review-panel">
+        <summary>Решение проверяющего</summary>
+        <div id="review-context"></div>
+        <form id="review-form" hidden>
+          <p>
+            <label>Решение
+              <select id="review-action">
+                <option value="confirm">Подтвердить оценку</option>
+                <option value="change">Изменить оценку</option>
+              </select>
+            </label>
+          </p>
+          <p id="review-value-row" hidden>
+            <label>Новая оценка <select id="review-value"></select></label>
+          </p>
+          <p>
+            <label>Причина решения
+              <textarea id="review-reason" rows="3" maxlength="1000" required></textarea>
+            </label>
+          </p>
+          <button id="review-submit" type="submit" disabled>Сохранить решение</button>
+        </form>
+        <p id="review-message" role="status"></p>
+        <div id="review-history"></div>
+      </details>
+    </section>
+
+    <footer class="footer">
+      <span>CQA STUDIO</span>
+      <span>RU · KZ · EN</span>
+    </footer>
   </main>
 
   <script>
@@ -354,23 +766,59 @@
       }
 
       const score = evaluation?.score?.final_score;
-      statusText.textContent = score == null ? 'Балл недоступен' : `Итог: ${score} из 100`;
+      if (score == null) {
+        statusText.textContent = 'Балл недоступен';
+      } else {
+        const number = document.createElement('strong');
+        number.className = 'score-number';
+        number.textContent = score.toLocaleString('ru-RU');
+        const scale = document.createElement('span');
+        scale.className = 'score-scale';
+        scale.textContent = '/ 100';
+        statusText.replaceChildren(number, scale);
+      }
       if (evaluation?.score?.critical_flag) {
-        statusText.textContent += ' · Выявлено грубое нарушение';
+        const warning = document.createElement('span');
+        warning.className = 'score-alert';
+        warning.textContent = 'Выявлено грубое нарушение';
+        statusText.append(warning);
       }
 
       transcript.replaceChildren(...conversation.transcript.map((turn, index) => {
         const row = document.createElement('li');
         row.id = turnId(id, index + 1);
-        row.textContent = `[${turn.timestamp}] ${turn.speaker}: ${turn.text}`;
+
+        const number = document.createElement('span');
+        number.className = 'turn-index';
+        number.textContent = String(index + 1).padStart(2, '0');
+
+        const meta = document.createElement('div');
+        meta.className = 'turn-meta';
+        const role = document.createElement('span');
+        role.className = 'turn-role';
+        role.dataset.speaker = turn.speaker;
+        const roles = { client: 'Клиент', operator: 'Оператор', bot: 'Бот', system: 'Система' };
+        role.textContent = roles[turn.speaker] ?? turn.speaker;
+        const time = document.createElement('time');
+        time.textContent = turn.timestamp;
+        meta.append(role, time);
+
+        const message = document.createElement('p');
+        message.className = 'turn-text';
+        message.textContent = turn.text;
+        row.append(number, meta, message);
         return row;
       }));
 
       document.querySelector('#section-scores').replaceChildren(
         ...sections.map(({ label, score }) => {
-          const value = score === null ? 'N/A' : score.toLocaleString('ru-RU') + '%';
           const row = document.createElement('li');
-          row.textContent = label + ' — ' + value;
+          const name = document.createElement('span');
+          name.textContent = label;
+          const value = document.createElement('strong');
+          value.className = 'section-value';
+          value.textContent = score === null ? 'N/A' : score.toLocaleString('ru-RU') + '%';
+          row.append(name, value);
           return row;
         })
       );
@@ -495,6 +943,13 @@
         setBusy(false);
       }
     });
+
+    for (const link of document.querySelectorAll('[data-open-panel]')) {
+      link.addEventListener('click', () => {
+        const panel = document.querySelector(link.getAttribute('href'));
+        if (panel) panel.open = true;
+      });
+    }
 
     start().catch(showError);
   </script>

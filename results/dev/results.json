@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "team_name": "Кванты",
+  "team_name": "Jarvis",
   "model": {
     "mode": "local",
     "name": "qwen3:4b"

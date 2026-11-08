@@ -1,0 +1,607 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Оценка диалогов</title>
+  <style>
+    body {
+      max-width: 56rem;
+      margin: 2rem auto;
+      padding: 0 1rem;
+      font: 16px/1.5 system-ui, sans-serif;
+    }
+
+    select { max-width: 100%; font: inherit; }
+    li { margin-block: 0.5rem; }
+    #criteria article, #review-history article { padding: 0.75rem 0; border-bottom: 1px solid #ddd; }
+    #criteria article h3 { margin: 0; }
+    #criteria article p { margin: 0.4rem 0; }
+    #transcript li { scroll-margin-top: 1rem; }
+    #transcript li:target { background: #fff2a6; outline: 2px solid #eab308; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Оценка диалогов</h1>
+    <label for="conversation">Диалог</label>
+    <select id="conversation" disabled></select>
+    <p id="status" role="status">Загружаю диалоги…</p>
+    <ul id="section-scores" aria-label="Итоги по разделам"></ul>
+    <button id="evaluate-current" type="button" disabled>
+      Оценить по рабочему чек-листу
+    </button>
+    <p id="evaluate-message" role="status"></p>
+
+    <details>
+      <summary>Редактор чек-листа</summary>
+      <form id="checklist-form">
+        <div id="checklist-rows"></div>
+        <button id="add-criterion" type="button" disabled>Добавить критерий</button>
+        <button id="save-checklist" type="submit" disabled>Сохранить чек-лист</button>
+        <p id="checklist-message" role="status"></p>
+      </form>
+    </details>
+
+    <template id="criterion-template">
+      <fieldset>
+        <p><label>Название <input name="label" required></label></p>
+        <p><label>Правило оценки <textarea name="rule" rows="3" required></textarea></label></p>
+        <p><label>Вес <input name="weight" type="number" min="0" step="any" required></label></p>
+        <p>
+          <label>Тип оценки
+            <select name="type">
+              <option value="boolean">Да / Нет</option>
+              <option value="scale">Числовая шкала</option>
+            </select>
+          </label>
+        </p>
+        <p><label>Значения шкалы <input name="scale" placeholder="0, 5, 10"></label></p>
+        <p><label><input name="allowNA" type="checkbox"> Разрешить N/A</label></p>
+        <button type="button">Удалить критерий</button>
+      </fieldset>
+    </template>
+
+    <details>
+      <summary>Апелляция</summary>
+      <form id="appeal-form">
+        <p>
+          <label>Критерий
+            <select id="appeal-criterion" required disabled></select>
+          </label>
+        </p>
+        <p>
+          <label>Почему ты оспариваешь оценку?
+            <textarea id="appeal-comment" rows="3" maxlength="1000" required disabled></textarea>
+          </label>
+        </p>
+        <button id="appeal-submit" type="submit" disabled>Подать апелляцию</button>
+        <p id="appeal-message" role="status"></p>
+      </form>
+    </details>
+
+    <details id="review-panel">
+      <summary>Решение проверяющего</summary>
+      <div id="review-context"></div>
+      <form id="review-form" hidden>
+        <p>
+          <label>Решение
+            <select id="review-action">
+              <option value="confirm">Подтвердить оценку</option>
+              <option value="change">Изменить оценку</option>
+            </select>
+          </label>
+        </p>
+        <p id="review-value-row" hidden>
+          <label>Новая оценка <select id="review-value"></select></label>
+        </p>
+        <p>
+          <label>Причина решения
+            <textarea id="review-reason" rows="3" maxlength="1000" required></textarea>
+          </label>
+        </p>
+        <button id="review-submit" type="submit" disabled>Сохранить решение</button>
+      </form>
+      <p id="review-message" role="status"></p>
+      <div id="review-history"></div>
+    </details>
+
+    <h2>Оценка по критериям</h2>
+    <div id="criteria"></div>
+
+    <h2>Транскрипт</h2>
+    <a id="audio-link" target="_blank" rel="noopener noreferrer" hidden>
+      Открыть запись звонка
+    </a>
+    <ol id="transcript"></ol>
+  </main>
+
+  <script>
+    const select = document.querySelector('#conversation');
+    const statusText = document.querySelector('#status');
+    const transcript = document.querySelector('#transcript');
+    const evaluateButton = document.querySelector('#evaluate-current');
+    const evaluateMessage = document.querySelector('#evaluate-message');
+    const appealForm = document.querySelector('#appeal-form');
+    const appealCriterion = document.querySelector('#appeal-criterion');
+    const appealComment = document.querySelector('#appeal-comment');
+    const appealSubmit = document.querySelector('#appeal-submit');
+    const appealMessage = document.querySelector('#appeal-message');
+    const reviewPanel = document.querySelector('#review-panel');
+    const reviewContext = document.querySelector('#review-context');
+    const reviewForm = document.querySelector('#review-form');
+    const reviewAction = document.querySelector('#review-action');
+    const reviewValueRow = document.querySelector('#review-value-row');
+    const reviewValue = document.querySelector('#review-value');
+    const reviewReason = document.querySelector('#review-reason');
+    const reviewSubmit = document.querySelector('#review-submit');
+    const reviewMessage = document.querySelector('#review-message');
+    const reviewHistory = document.querySelector('#review-history');
+
+    let displayedConversationId = null;
+    let pendingAppeal = null;
+    let busy = false;
+
+    async function getJson(url, options) {
+      const response = await fetch(url, options);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.error ?? `Ошибка загрузки (${response.status})`);
+      return data;
+    }
+
+    function updateActions() {
+      const ready = displayedConversationId !== null && displayedConversationId === select.value;
+      const available = ready && !busy && !pendingAppeal;
+      evaluateButton.disabled = !available;
+
+      const canAppeal = available && appealCriterion.options.length > 0;
+      appealCriterion.disabled = !canAppeal;
+      appealComment.disabled = !canAppeal;
+      appealSubmit.disabled = !canAppeal;
+
+      const canReview = ready && !busy && Boolean(pendingAppeal);
+      reviewAction.disabled = !canReview;
+      reviewReason.disabled = !canReview;
+      reviewSubmit.disabled = !canReview;
+      updateReviewValue();
+    }
+
+    function setBusy(value) {
+      busy = value;
+      select.disabled = value;
+      updateActions();
+    }
+
+    function turnId(conversationId, number) {
+      return `turn-${conversationId}-${number}`;
+    }
+
+    function answerText(value, scale) {
+      if (value === null) return 'N/A';
+      if (typeof value === 'boolean') return value ? 'Да' : 'Нет';
+      return scale ? `${value} из ${Math.max(...scale)}` : String(value);
+    }
+
+    function showCriteria(evaluation, checklist, conversationId) {
+      const container = document.querySelector('#criteria');
+
+      if (evaluation?.status !== 'ok') {
+        container.textContent = 'Оценка по критериям недоступна.';
+        return;
+      }
+
+      const rules = new Map(checklist.map((rule) => [rule.id, rule]));
+      const cards = evaluation.criteria.map((criterion) => {
+        const rule = rules.get(criterion.criterion_id);
+        const card = document.createElement('article');
+        const title = document.createElement('h3');
+        const summary = document.createElement('p');
+        const rationale = document.createElement('p');
+        const evidence = document.createElement('p');
+
+        title.textContent = rule?.label ?? criterion.criterion_id;
+        summary.textContent = answerText(criterion.value, rule?.scale);
+
+        if (rule?.weight > 0) {
+          summary.textContent += ` · Вес ${rule.weight}`;
+          if (criterion.value !== null) {
+            const max = rule.scale ? Math.max(...rule.scale) : 1;
+            const points = Number(criterion.value) * rule.weight / max;
+            const formatted = points.toLocaleString('ru-RU', { maximumFractionDigits: 2 });
+            summary.textContent += ` · Баллы до перераспределения: ${formatted}`;
+          }
+        }
+
+        rationale.textContent = criterion.rationale;
+        appendEvidenceLinks(evidence, conversationId, criterion.evidence_turns);
+
+        card.append(title, summary, rationale, evidence);
+        return card;
+      });
+
+      container.replaceChildren(...cards);
+    }
+
+    function showAppeal(evaluation, checklist, appeals) {
+      const names = new Map(checklist.map((rule) => [rule.id, rule.label]));
+      const valid = evaluation?.status === 'ok';
+      pendingAppeal = appeals.find((appeal) => appeal.status === 'pending') ?? null;
+
+      appealCriterion.replaceChildren();
+      appealComment.value = '';
+
+      if (valid) {
+        for (const criterion of evaluation.criteria) {
+          const option = document.createElement('option');
+          option.value = criterion.criterion_id;
+          option.textContent = names.get(criterion.criterion_id) ?? criterion.criterion_id;
+          appealCriterion.append(option);
+        }
+      }
+
+      if (pendingAppeal) {
+        const name = names.get(pendingAppeal.criterion_id) ?? pendingAppeal.criterion_id;
+        appealCriterion.value = pendingAppeal.criterion_id;
+        appealMessage.textContent = `На проверке · ${name}. Комментарий: ${pendingAppeal.comment}`;
+      } else {
+        appealMessage.textContent = valid ? '' : 'Сначала получи оценку диалога.';
+      }
+    }
+
+    function updateReviewValue() {
+      const changing = reviewAction.value === 'change';
+      reviewValueRow.hidden = !changing;
+      reviewValue.disabled = reviewAction.disabled || !changing;
+    }
+
+    function paragraph(text) {
+      const item = document.createElement('p');
+      item.textContent = text;
+      return item;
+    }
+
+    function appendEvidenceLinks(container, conversationId, turns) {
+      for (const number of turns) {
+        const link = document.createElement('a');
+        link.href = `#${encodeURIComponent(turnId(conversationId, number))}`;
+        link.textContent = `Реплика №${number}`;
+        container.append(link, ' ');
+      }
+    }
+
+    function totalText(evaluation) {
+      const value = evaluation?.score?.final_score;
+      return value == null ? 'Балл недоступен' : `${value.toLocaleString('ru-RU')} из 100`;
+    }
+
+    function showReview(appeals, conversationId) {
+      const decisions = appeals.filter((item) => item.status === 'resolved').reverse();
+      reviewHistory.replaceChildren(...decisions.map((item) => {
+        const rule = item.checklist.find((entry) => entry.id === item.criterion_id);
+        const before = item.original.criteria.find((entry) => entry.criterion_id === item.criterion_id);
+        const title = document.createElement('h3');
+        title.textContent = rule?.label ?? item.criterion_id;
+        const card = document.createElement('article');
+        card.append(
+          title,
+          paragraph(item.decision.action === 'confirm' ? 'Оценка подтверждена' : 'Оценка изменена'),
+          paragraph(`Ответ по критерию: ${answerText(before.value, rule?.scale)} → ${answerText(item.decision.value, rule?.scale)}`),
+          paragraph(`Исходный итог: ${totalText(item.original)} · Итог после решения: ${totalText(item.final)}`),
+          paragraph(`Комментарий к апелляции: ${item.comment}`),
+          paragraph(`Причина решения: ${item.decision.reason}`)
+        );
+        return card;
+      }));
+
+      reviewContext.replaceChildren();
+      reviewForm.hidden = !pendingAppeal;
+      reviewAction.value = 'confirm';
+      reviewValue.replaceChildren();
+      reviewReason.value = '';
+
+      if (!pendingAppeal) {
+        if (!decisions.length) {
+          reviewContext.append(paragraph('Здесь появятся апелляции по выбранному диалогу.'));
+        }
+        return;
+      }
+
+      const rule = pendingAppeal.checklist.find((item) => item.id === pendingAppeal.criterion_id);
+      const criterion = pendingAppeal.original.criteria.find((item) => item.criterion_id === pendingAppeal.criterion_id);
+      const links = document.createElement('p');
+      appendEvidenceLinks(links, conversationId, criterion.evidence_turns);
+      reviewContext.append(
+        paragraph(`Критерий: ${rule?.label ?? pendingAppeal.criterion_id}`),
+        paragraph(`Исходная оценка: ${answerText(criterion.value, rule?.scale)} · Исходный итог: ${totalText(pendingAppeal.original)}`),
+        paragraph(`Комментарий к апелляции: ${pendingAppeal.comment}`),
+        paragraph(`Исходное обоснование: ${criterion.rationale}`),
+        links
+      );
+
+      const values = [...(rule?.scale ?? [true, false])];
+      if (rule?.allowNA) values.push(null);
+      for (const value of values.filter((item) => item !== criterion.value)) {
+        const option = document.createElement('option');
+        option.value = JSON.stringify(value);
+        option.textContent = answerText(value, rule?.scale);
+        reviewValue.append(option);
+      }
+      reviewAction.querySelector('option[value="change"]').disabled = !reviewValue.options.length;
+    }
+
+    async function showConversation() {
+      const id = select.value;
+      displayedConversationId = null;
+      updateActions();
+
+      const { conversation, evaluation, checklist, appeals = [], sections = [] } = await getJson(
+        `/api/conversations?id=${encodeURIComponent(id)}`
+      );
+      if (id !== select.value) return;
+
+      const audioLink = document.querySelector('#audio-link');
+      const audioUrl = typeof conversation.audio_url === 'string'
+        ? conversation.audio_url.trim()
+        : '';
+
+      const hasAudio = /^https?:\/\//i.test(audioUrl);
+      audioLink.hidden = !hasAudio;
+
+      if (hasAudio) {
+        audioLink.href = audioUrl;
+      } else {
+        audioLink.removeAttribute('href');
+      }
+
+      const score = evaluation?.score?.final_score;
+      statusText.textContent = score == null ? 'Балл недоступен' : `Итог: ${score} из 100`;
+      if (evaluation?.score?.critical_flag) {
+        statusText.textContent += ' · Выявлено грубое нарушение';
+      }
+
+      transcript.replaceChildren(...conversation.transcript.map((turn, index) => {
+        const row = document.createElement('li');
+        row.id = turnId(id, index + 1);
+        row.textContent = `[${turn.timestamp}] ${turn.speaker}: ${turn.text}`;
+        return row;
+      }));
+
+      document.querySelector('#section-scores').replaceChildren(
+        ...sections.map(({ label, score }) => {
+          const value = score === null ? 'N/A' : score.toLocaleString('ru-RU') + '%';
+          const row = document.createElement('li');
+          row.textContent = label + ' — ' + value;
+          return row;
+        })
+      );
+
+      showCriteria(evaluation, checklist, id);
+      showAppeal(evaluation, checklist, appeals);
+      showReview(appeals, id);
+      displayedConversationId = id;
+      updateActions();
+    }
+
+    function showError(error) {
+      statusText.textContent = error.message;
+    }
+
+    async function start() {
+      const conversations = await getJson('/api/conversations');
+      for (const item of conversations) {
+        const option = document.createElement('option');
+        option.value = item.conversation_id;
+        option.textContent = `${item.conversation_id} · ${item.language} · ${item.channel}`;
+        select.append(option);
+      }
+
+      if (!select.value) {
+        statusText.textContent = 'Диалоги не найдены.';
+        return;
+      }
+
+      select.disabled = false;
+      await showConversation();
+    }
+
+    select.addEventListener('change', () => {
+      evaluateMessage.textContent = '';
+      reviewMessage.textContent = '';
+      showConversation().catch(showError);
+    });
+
+    evaluateButton.addEventListener('click', async () => {
+      if (evaluateButton.disabled) return;
+
+      const id = select.value;
+      setBusy(true);
+      evaluateMessage.textContent = 'Оцениваю диалог…';
+
+      try {
+        await getJson(`/api/evaluate?id=${encodeURIComponent(id)}`, { method: 'POST' });
+        await showConversation();
+        evaluateMessage.textContent = 'Новая оценка сохранена.';
+      } catch (error) {
+        evaluateMessage.textContent = `Ошибка оценки: ${error.message}`;
+      } finally {
+        setBusy(false);
+      }
+    });
+
+    appealForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (appealSubmit.disabled) return;
+
+      const id = select.value;
+      const payload = {
+        criterion_id: appealCriterion.value,
+        comment: appealComment.value.trim(),
+      };
+
+      if (!payload.comment) {
+        appealMessage.textContent = 'Напиши комментарий к апелляции.';
+        return;
+      }
+
+      setBusy(true);
+      appealMessage.textContent = 'Отправляю апелляцию…';
+
+      try {
+        await getJson(`/api/appeals?id=${encodeURIComponent(id)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        await showConversation();
+      } catch (error) {
+        appealMessage.textContent = error.message;
+      } finally {
+        setBusy(false);
+      }
+    });
+
+    reviewAction.addEventListener('change', updateReviewValue);
+
+    reviewForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (reviewSubmit.disabled || !pendingAppeal) return;
+
+      const reason = reviewReason.value.trim();
+      if (!reason) {
+        reviewMessage.textContent = 'Укажи причину решения.';
+        return;
+      }
+
+      const id = select.value;
+      const action = reviewAction.value;
+      const payload = { appeal_id: pendingAppeal.id, action, reason };
+      if (action === 'change') payload.value = JSON.parse(reviewValue.value);
+
+      setBusy(true);
+      reviewMessage.textContent = 'Сохраняю решение…';
+
+      try {
+        await getJson(`/api/appeals/resolve?id=${encodeURIComponent(id)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        await showConversation();
+        reviewPanel.open = true;
+        reviewMessage.textContent = 'Решение сохранено. Итоговый балл пересчитан.';
+      } catch (error) {
+        reviewMessage.textContent = error.message;
+      } finally {
+        setBusy(false);
+      }
+    });
+
+    start().catch(showError);
+  </script>
+
+  <script>
+    const editorForm = document.querySelector('#checklist-form');
+    const editorRows = document.querySelector('#checklist-rows');
+    const editorMessage = document.querySelector('#checklist-message');
+    const addRuleButton = document.querySelector('#add-criterion');
+    const saveRulesButton = document.querySelector('#save-checklist');
+
+    function ruleFields(row) {
+      return Object.fromEntries(
+        [...row.querySelectorAll('[name]')].map((field) => [field.name, field])
+      );
+    }
+
+    function addRuleRow(rule) {
+      const template = document.querySelector('#criterion-template');
+      const row = template.content.firstElementChild.cloneNode(true);
+      row.dataset.id = rule.id;
+
+      const fields = ruleFields(row);
+      fields.label.value = rule.label;
+      fields.rule.value = rule.rule;
+      fields.weight.value = rule.weight;
+      fields.allowNA.checked = Boolean(rule.allowNA);
+      fields.type.value = rule.scale ? 'scale' : 'boolean';
+      fields.scale.value = rule.scale?.join(', ') ?? '';
+
+      function updateScale() {
+        const isScale = fields.type.value === 'scale';
+        fields.scale.disabled = !isScale;
+        fields.scale.required = isScale;
+      }
+
+      const remove = row.querySelector('button');
+      if (rule.id === 'critical') {
+        remove.disabled = true;
+        fields.weight.disabled = true;
+        fields.type.disabled = true;
+        fields.allowNA.disabled = true;
+      }
+
+      fields.type.addEventListener('change', updateScale);
+      remove.addEventListener('click', () => row.remove());
+      updateScale();
+      editorRows.append(row);
+    }
+
+    function readRules() {
+      return Array.from(editorRows.children, (row) => {
+        const fields = ruleFields(row);
+        const rule = {
+          id: row.dataset.id,
+          label: fields.label.value.trim(),
+          rule: fields.rule.value.trim(),
+          weight: Number(fields.weight.value),
+          allowNA: fields.allowNA.checked,
+        };
+
+        if (fields.type.value === 'scale') {
+          rule.scale = fields.scale.value.split(/[\s,]+/).filter(Boolean).map(Number);
+        }
+
+        return rule;
+      });
+    }
+
+    addRuleButton.addEventListener('click', () => {
+      addRuleRow({
+        id: `custom-${crypto.randomUUID()}`,
+        label: '',
+        rule: '',
+        weight: 5,
+        allowNA: false,
+      });
+    });
+
+    editorForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (saveRulesButton.disabled) return;
+
+      saveRulesButton.disabled = true;
+      editorMessage.textContent = 'Сохраняю…';
+
+      try {
+        const rules = await getJson('/api/checklist', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(readRules()),
+        });
+        editorMessage.textContent = `Чек-лист сохранён. Критериев: ${rules.length}.`;
+      } catch (error) {
+        editorMessage.textContent = error.message;
+      } finally {
+        saveRulesButton.disabled = false;
+      }
+    });
+
+    getJson('/api/checklist').then((rules) => {
+      rules.forEach(addRuleRow);
+      addRuleButton.disabled = false;
+      saveRulesButton.disabled = false;
+    }).catch((error) => {
+      editorMessage.textContent = error.message;
+    });
+  </script>
+</body>
+</html>
